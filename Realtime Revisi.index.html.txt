@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Realtime Income, Budget & Schedule (1 Year)</title>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    :root{--bg:#f6f8fa;--card:#fff;--muted:#666}
+    body{font-family:Inter,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);margin:0;padding:24px;color:#111}
+    .container{max-width:1000px;margin:0 auto}
+    h1{margin:0 0 12px;font-size:20px}
+    .grid{display:grid;grid-template-columns:1fr 380px;gap:16px}
+    .card{background:var(--card);padding:14px;border-radius:8px;box-shadow:0 1px 4px rgba(16,24,40,0.06)}
+    label{display:block;font-size:13px;margin:8px 0 6px}
+    input, select{width:100%;padding:8px;border-radius:6px;border:1px solid #e6e9ee;font-size:14px}
+    button{padding:8px 12px;border-radius:6px;border:none;background:#2563eb;color:#fff;cursor:pointer}
+    .small-btn{background:#e6e9ee;color:#111}
+    .danger{background:#ef4444;color:#fff}
+    .muted{color:var(--muted);font-size:13px}
+    table{width:100%;border-collapse:collapse}
+    th,td{padding:8px;border-bottom:1px solid #f0f2f5;font-size:14px}
+    .pill{background:#f3f4f6;padding:10px;border-radius:8px}
+    .controls{display:flex;gap:8px;flex-wrap:wrap}
+    @media(max-width:900px){.grid{grid-template-columns:1fr}}
+  </style>
+</head>
+
+<body>
+<div class="container">
+<h1>Realtime Income, Budget & Schedule — 1 Year</h1>
+
+<div class="grid">
+
+<!-- LEFT -->
+<div>
+
+<div class="card">
+<strong>Income & Budget (Monthly)</strong>
+
+<div style="display:flex;gap:8px;margin-top:8px">
+  <select id="income-month"></select>
+  <input id="income-amount" type="number" placeholder="Actual Income" />
+  <button id="add-income">Tambah</button>
+</div>
+
+<div style="display:flex;gap:8px;margin-top:8px">
+  <select id="budget-month"></select>
+  <input id="budget-amount" type="number" placeholder="Budget" />
+  <button id="add-budget" class="small-btn">Set Budget</button>
+</div>
+
+<table style="margin-top:12px">
+<thead>
+<tr>
+  <th>Bulan</th>
+  <th>Actual</th>
+  <th>Budget</th>
+  <th></th>
+</tr>
+</thead>
+<tbody id="income-list"></tbody>
+</table>
+
+<div class="controls" style="margin-top:12px">
+  <button id="export-data" class="small-btn">Export JSON</button>
+  <button id="import-data" class="small-btn">Import JSON</button>
+  <button id="clear-data" class="small-btn danger">Clear All</button>
+  <input id="import-file" type="file" accept="application/json" hidden>
+</div>
+</div>
+
+<div style="height:16px"></div>
+
+<div class="card">
+<strong>Schedule</strong>
+
+<label>Tanggal</label>
+<input id="event-date" type="date">
+<label>Deskripsi</label>
+<input id="event-desc" type="text">
+
+<button id="add-event" style="margin-top:8px">Tambah Event</button>
+
+<ul id="events-list" style="padding-left:18px;margin-top:12px"></ul>
+</div>
+
+</div>
+
+<!-- RIGHT -->
+<div>
+
+<div class="card">
+<strong>Dashboard</strong>
+
+<div class="pill" style="margin-top:8px">
+  <div class="muted">Total Income</div>
+  <div id="total-income" style="font-size:20px;font-weight:600">Rp 0</div>
+</div>
+
+<div class="pill" style="margin-top:8px">
+  <div class="muted">Rata-rata / Bulan</div>
+  <div id="avg-income" style="font-size:18px;font-weight:600">Rp 0</div>
+</div>
+
+<div style="margin-top:16px">
+  <canvas id="budgetChart" height="220"></canvas>
+</div>
+</div>
+
+</div>
+</div>
+</div>
+
+<script>
+const MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"]
+const money=n=>'Rp '+Number(n||0).toLocaleString('id-ID')
+const STORAGE_KEY='income_budget_schedule_v2'
+
+let state=JSON.parse(localStorage.getItem(STORAGE_KEY))||{incomes:{},budgets:{},events:[]}
+
+const incomeMonth=document.getElementById('income-month')
+const budgetMonth=document.getElementById('budget-month')
+MONTHS.forEach((m,i)=>{
+  incomeMonth.add(new Option(m,i))
+  budgetMonth.add(new Option(m,i))
+})
+
+const incomeList=document.getElementById('income-list')
+const totalIncomeEl=document.getElementById('total-income')
+const avgIncomeEl=document.getElementById('avg-income')
+
+function save(){localStorage.setItem(STORAGE_KEY,JSON.stringify(state))}
+
+function render(){
+  incomeList.innerHTML=''
+  let total=0
+
+  MONTHS.forEach((m,i)=>{
+    const a=state.incomes[i]||0
+    const b=state.budgets[i]||0
+    total+=a
+    incomeList.innerHTML+=`
+    <tr>
+      <td>${m}</td>
+      <td>${money(a)}</td>
+      <td>${money(b)}</td>
+      <td><button class="small-btn danger" onclick="del(${i})">X</button></td>
+    </tr>`
+  })
+
+  totalIncomeEl.textContent=money(total)
+  avgIncomeEl.textContent=money(Math.round(total/12))
+  renderChart()
+}
+
+function del(i){
+  delete state.incomes[i]
+  delete state.budgets[i]
+  save();render()
+}
+
+document.getElementById('add-income').onclick=()=>{
+  const m=incomeMonth.value
+  const v=+document.getElementById('income-amount').value
+  if(!v)return
+  state.incomes[m]=(state.incomes[m]||0)+v
+  save();render()
+}
+
+document.getElementById('add-budget').onclick=()=>{
+  const m=budgetMonth.value
+  const v=+document.getElementById('budget-amount').value
+  if(!v)return
+  state.budgets[m]=v
+  save();render()
+}
+
+let chart
+function renderChart(){
+  const ctx=document.getElementById('budgetChart')
+  const actual=[],budget=[]
+  for(let i=0;i<12;i++){
+    actual.push(state.incomes[i]||0)
+    budget.push(state.budgets[i]||0)
+  }
+  if(chart)chart.destroy()
+  chart=new Chart(ctx,{
+    type:'line',
+    data:{
+      labels:MONTHS,
+      datasets:[
+        {label:'Actual',data:actual,borderColor:'#2563eb',tension:.3},
+        {label:'Budget',data:budget,borderColor:'#16a34a',borderDash:[5,5],tension:.3}
+      ]
+    }
+  })
+}
+
+render()
+</script>
+</body>
+</html>
